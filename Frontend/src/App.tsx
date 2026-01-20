@@ -15,7 +15,8 @@ function App() {
   const [socket, setSockt] = useState<Socket | null>(null)
 
   useEffect(() => {
-    const socketio = io(import.meta.env.VITE_BACKEND_URL || "http://localhost:5000")
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+    const socketio = io(BACKEND_URL.replace(/\/api\/?$/, ""));
     setSockt(socketio)
     socketio.on("connect", () => {
       console.log("Connected to backend");

@@ -34,7 +34,7 @@ const JoinRoom: React.FC<JoinRoomProps> = ({ socket }) => {
       host: false,
     };
 
-    socket.emit("roomJoined", roomData);
+    socket.emit("joinRoom", roomData);
     navigate(`/${roomId}`);
   };
 

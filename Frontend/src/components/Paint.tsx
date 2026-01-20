@@ -56,8 +56,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
 import useAuth from "../hooks/useAuth";
 
-const ENDPOINT = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
-const socket = io(ENDPOINT);
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000/api";
+const SOCKET_ENDPOINT = BACKEND_URL.replace(/\/api\/?$/, "");
+const socket = io(SOCKET_ENDPOINT, {
+  path: "/api/socket.io/",
+});
 
 const downloadURI = (uri: string, name: string) => {
   const link = document.createElement("a");
@@ -124,7 +127,7 @@ export const Paint: React.FC = React.memo(function Paint() {
   useEffect(() => {
     const fetchDrawing = async () => {
       try {
-        const response = await axios.get(`${ENDPOINT}/drawings/room/${roomId}`);
+        const response = await axios.get(`${BACKEND_URL}/drawings/room/${roomId}`);
         if (response.data) {
           setScribbles(response.data.elements || []);
           setBoardName(response.data.name || "Untitled Board");
@@ -143,7 +146,7 @@ export const Paint: React.FC = React.memo(function Paint() {
       // Generate thumbnail
       const thumbnail = stageRef?.current?.toDataURL();
 
-      await axios.post(`${ENDPOINT}/drawings/save`, {
+      await axios.post(`${BACKEND_URL}/drawings/save`, {
         roomId,
         elements: scribbles,
         name: boardName,
@@ -249,7 +252,15 @@ export const Paint: React.FC = React.memo(function Paint() {
   useEffect(() => {
     if (!roomId) return;
 
-    socket.emit('joinRoom', { roomId, user });
+    const onConnect = () => {
+      socket.emit('joinRoom', { roomId, user });
+    };
+
+    if (socket.connected) {
+      onConnect();
+    }
+
+    socket.on('connect', onConnect);
 
     socket.on('usersUpdated', (users) => {
       setActiveUsers(users.filter((u: any) => u.id !== socket.id));
@@ -265,6 +276,7 @@ export const Paint: React.FC = React.memo(function Paint() {
     socket.on('whiteboardAction', handleWhiteboardAction);
 
     return () => {
+      socket.off('connect', onConnect);
       socket.off('usersUpdated');
       socket.off('cursorMoved');
       socket.off('whiteboardAction', handleWhiteboardAction);
@@ -288,16 +300,21 @@ export const Paint: React.FC = React.memo(function Paint() {
   const onStageMouseDown = useCallback((e: KonvaEventObject<MouseEvent | TouchEvent>) => {
     if (drawAction === DrawAction.Select) return;
 
-    // Stop event propagation and default behavior to prevent mobile scrolling
-    if (e.evt) {
-      if ('preventDefault' in e.evt) e.evt.preventDefault();
+    if (e.evt && 'preventDefault' in e.evt) {
+      e.evt.preventDefault();
     }
 
     isPaintRef.current = true;
     const stage = stageRef?.current;
-    const pos = stage?.getPointerPosition();
-    const x = pos?.x || 0;
-    const y = pos?.y || 0;
+    if (!stage) return;
+
+    const pos = stage.getPointerPosition();
+    if (!pos) return;
+
+    const oldScale = stage.scaleX();
+    const x = (pos.x - stage.x()) / oldScale;
+    const y = (pos.y - stage.y()) / oldScale;
+
     const id = uuidv4();
     currentShapeRef.current = id;
     let newAction: any = { id, x, y, color };
@@ -309,17 +326,26 @@ export const Paint: React.FC = React.memo(function Paint() {
   }, [drawAction, color, emitWhiteboardAction]);
 
   const onStageMouseMove = useCallback((e: KonvaEventObject<MouseEvent | TouchEvent>) => {
+    const stage = stageRef?.current;
+    if (!stage) return;
+
+    const pos = stage.getPointerPosition();
+    if (!pos) return;
+
+    const oldScale = stage.scaleX();
+    const x = (pos.x - stage.x()) / oldScale;
+    const y = (pos.y - stage.y()) / oldScale;
+
+    // Emit cursor position to others
+    socket.emit('cursorMove', { roomId, x, y });
+
     if (drawAction === DrawAction.Select || !isPaintRef.current) return;
 
     if (e.evt && 'preventDefault' in e.evt) {
       e.evt.preventDefault();
     }
 
-    const stage = stageRef?.current;
     const id = currentShapeRef.current;
-    const pos = stage?.getPointerPosition();
-    const x = pos?.x || 0;
-    const y = pos?.y || 0;
     let updatedShape;
     if (drawAction === DrawAction.Scribble) {
       setScribbles((prevScribbles) =>
@@ -332,9 +358,6 @@ export const Paint: React.FC = React.memo(function Paint() {
       updatedShape = { id, points: [x, y] };
     }
     if (updatedShape) emitWhiteboardAction(drawAction, updatedShape);
-
-    // Emit cursor position
-    socket.emit('cursorMove', { roomId, x, y });
   }, [drawAction, emitWhiteboardAction, roomId]);
 
   const onClear = useCallback(() => {
@@ -606,7 +629,19 @@ export const Paint: React.FC = React.memo(function Paint() {
               <span className="hidden sm:inline">Export</span>
             </button>
 
-            <button className="hidden sm:block p-2 text-gray-500 hover:bg-gray-50 rounded-lg">
+            <button
+              onClick={() => {
+                const link = `${window.location.origin}/${roomId}`;
+                navigator.clipboard.writeText(link);
+                toast({
+                  title: "Link Copied",
+                  description: "Share this link with your teammates",
+                  status: "success",
+                  duration: 2000,
+                });
+              }}
+              className="hidden sm:block p-2 text-gray-500 hover:bg-gray-50 rounded-lg"
+            >
               <LuShare2 size={20} />
             </button>
           </div>

@@ -35,12 +35,15 @@ const Signup: React.FC = () => {
   const handleGoogleSignup = async () => {
     setIsLoading(true);
     try {
+      console.log('[AUTH] Initiating Google Signup');
       const result = await signInWithPopup(auth, googleProvider);
       const token = await result.user.getIdToken();
+      console.log(`[AUTH] Firebase Token acquired for ${result.user.email}`);
 
       const res = await axios.post(`${ENDPOINT}/users/sync`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      console.log('[AUTH] Google Signup successful, user synced with backend');
 
       localStorage.setItem('boardify_token', res.data.token);
       localStorage.setItem('boardify_user', JSON.stringify(res.data.user));
@@ -78,6 +81,7 @@ const Signup: React.FC = () => {
       return;
     }
 
+    console.log(`[AUTH] Initiating Registration for ${email}`);
     setIsLoading(true);
     try {
       const res = await axios.post(`${ENDPOINT}/users/register`, {
@@ -85,6 +89,7 @@ const Signup: React.FC = () => {
         email,
         password
       });
+      console.log(`[AUTH] Registration successful for ${email}`);
 
       localStorage.setItem('boardify_token', res.data.token);
       localStorage.setItem('boardify_user', JSON.stringify({
@@ -102,6 +107,7 @@ const Signup: React.FC = () => {
 
       navigate('/dashboard');
     } catch (error: any) {
+      console.error(`[AUTH] Registration failed for ${email}:`, error.response?.data?.error || error.message);
       toast({
         title: 'Signup Failed',
         description: error.response?.data?.error || "Something went wrong",

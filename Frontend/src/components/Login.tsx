@@ -34,14 +34,17 @@ const Login: React.FC = () => {
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     try {
+      console.log('[AUTH] Initiating Google Sign-In');
       const result = await signInWithPopup(auth, googleProvider);
       const token = await result.user.getIdToken();
+      console.log(`[AUTH] Firebase Token acquired for ${result.user.email}`);
 
       const res = await axios.post(`${ENDPOINT}/users/sync`, {}, {
         headers: {
           Authorization: `Bearer ${token}`
         }
       });
+      console.log('[AUTH] Google Sign-In successful, user synced with backend');
 
       localStorage.setItem('boardify_token', res.data.token);
       localStorage.setItem('boardify_user', JSON.stringify(res.data.user));
@@ -79,12 +82,14 @@ const Login: React.FC = () => {
       return;
     }
 
+    console.log(`[AUTH] Initiating Login for ${email}`);
     setIsLoading(true);
     try {
       const res = await axios.post(`${ENDPOINT}/users/login`, {
         email,
         password
       });
+      console.log(`[AUTH] Login successful for ${email}`);
 
       localStorage.setItem('boardify_token', res.data.token);
       localStorage.setItem('boardify_user', JSON.stringify({
@@ -100,6 +105,7 @@ const Login: React.FC = () => {
       });
       navigate('/dashboard');
     } catch (error: any) {
+      console.error(`[AUTH] Login failed for ${email}:`, error.response?.data?.error || error.message);
       toast({
         title: 'Login Failed',
         description: error.response?.data?.error || "Invalid credentials",
