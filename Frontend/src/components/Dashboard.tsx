@@ -22,6 +22,8 @@ import useAuth from '../hooks/useAuth';
 import { auth } from '../config/firebase';
 import { signOut as firebaseSignOut } from 'firebase/auth';
 import axios from 'axios';
+import logo from '../assets/logo.png';
+
 import {
     useToast,
     Modal,
@@ -313,9 +315,9 @@ const Dashboard: React.FC = () => {
                     className="flex items-center justify-between px-2 mb-8 cursor-pointer"
                     onClick={() => navigate("/")}
                 >
-                    <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
-                            <LuLayoutDashboard size={20} />
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-blue-500/10">
+                            <img src={logo} alt="Boardify Logo" className="w-full h-full object-cover" />
                         </div>
                         <span className={`font-bold text-xl ${logoColor}`}>Boardify</span>
                     </div>

@@ -24,6 +24,8 @@ import { LuSparkles, LuChevronRight } from "react-icons/lu";
 
 // Use the generated image path (Antigravity will handle the path transformation)
 import futuristicHero from "../assets/hero.png"; // Keeping import name for simplicity, will update if needed
+import logo from "../assets/logo.png";
+
 
 interface HomeProps {
   socket: any;
@@ -230,8 +232,10 @@ const Home: React.FC<HomeProps> = ({ socket }) => {
       <Box as="footer" py={20} borderTop="1px solid" borderColor={useColorModeValue("gray.100", "whiteAlpha.100")}>
         <Container maxW="container.xl">
           <Flex direction={{ base: "column", md: "row" }} justify="space-between" align="center" gap={8}>
-            <Flex align="center" gap={2}>
-              <Box w="6" h="6" bg="blue.600" borderRadius="lg" />
+            <Flex align="center" gap={3}>
+              <Box w="8" h="8" borderRadius="lg" overflow="hidden" boxShadow="lg">
+                <img src={logo} alt="Boardify Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </Box>
               <Text fontWeight="extrabold" fontSize="xl" letterSpacing="tighter" color={textColor}>Boardify</Text>
             </Flex>
 

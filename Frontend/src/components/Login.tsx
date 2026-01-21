@@ -20,6 +20,8 @@ import { FcGoogle } from 'react-icons/fc';
 import { auth, googleProvider } from '../config/firebase';
 import { signInWithPopup } from 'firebase/auth';
 import axios from 'axios';
+import logo from '../assets/logo.png';
+
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -131,8 +133,10 @@ const Login: React.FC = () => {
 
       <Container centerContent maxW="md" position="relative" zIndex={1}>
         <VStack spacing={8} w="full">
-          <Flex align="center" gap={2} cursor="pointer" onClick={() => navigate("/")} _hover={{ transform: 'scale(1.02)' }} transition="all 0.2s">
-            <Box w="10" h="10" bg="blue.600" borderRadius="xl" display="flex" alignItems="center" justifyContent="center" color="white" fontWeight="bold" fontSize="2xl">B</Box>
+          <Flex align="center" gap={3} cursor="pointer" onClick={() => navigate("/")} _hover={{ transform: 'scale(1.02)' }} transition="all 0.2s">
+            <Box w="12" h="12" borderRadius="2xl" overflow="hidden" boxShadow="xl">
+              <img src={logo} alt="Boardify Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </Box>
             <Heading as="h1" size="xl" fontWeight="800" letterSpacing="tighter" color={textColor}>
               Boardify
             </Heading>

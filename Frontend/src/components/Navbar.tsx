@@ -19,6 +19,8 @@ import { auth } from "../config/firebase";
 import { signOut as firebaseSignOut } from "firebase/auth";
 import useAuth from "../hooks/useAuth";
 import { LuMoon, LuSun, LuLayout, LuLogOut } from "react-icons/lu";
+import logo from "../assets/logo.png";
+
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -78,18 +80,15 @@ const Navbar = () => {
         _hover={{ opacity: 0.8 }}
       >
         <Box
-          w="8" h="8"
-          bg="blue.600"
+          w="10" h="10"
           borderRadius="xl"
           display="flex"
           alignItems="center"
           justifyContent="center"
-          color="white"
-          fontWeight="bold"
-          fontSize="lg"
-          boxShadow="0 4px 12px rgba(37, 99, 235, 0.3)"
+          overflow="hidden"
+          boxShadow="0 8px 20px -4px rgba(66, 153, 225, 0.3)"
         >
-          B
+          <img src={logo} alt="Boardify Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </Box>
         <Heading size="md" color={textColor} fontWeight="800" letterSpacing="tighter">Boardify</Heading>
       </Flex>
