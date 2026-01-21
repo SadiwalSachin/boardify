@@ -253,6 +253,7 @@ export const Paint: React.FC = React.memo(function Paint() {
     if (!roomId) return;
 
     const onConnect = () => {
+      console.log(`[SOCKET] Connected with ID: ${socket.id}. Joining room: ${roomId}`);
       socket.emit('joinRoom', { roomId, user });
     };
 
@@ -261,6 +262,14 @@ export const Paint: React.FC = React.memo(function Paint() {
     }
 
     socket.on('connect', onConnect);
+    socket.on('disconnect', () => console.warn('[SOCKET] Disconnected from server'));
+
+    socket.on('roomState', ({ users, elements }) => {
+      setActiveUsers(users.filter((u: any) => u.id !== socket.id));
+      if (elements && elements.length > 0) {
+        setScribbles(elements);
+      }
+    });
 
     socket.on('usersUpdated', (users) => {
       setActiveUsers(users.filter((u: any) => u.id !== socket.id));
@@ -277,6 +286,7 @@ export const Paint: React.FC = React.memo(function Paint() {
 
     return () => {
       socket.off('connect', onConnect);
+      socket.off('roomState');
       socket.off('usersUpdated');
       socket.off('cursorMoved');
       socket.off('whiteboardAction', handleWhiteboardAction);
