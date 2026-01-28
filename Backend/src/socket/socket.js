@@ -71,19 +71,30 @@ io.on("connection", (socket) => {
         const { roomId, type, action } = data;
         if (!rooms[roomId]) return;
 
-        // Update in-memory elements
-        if (type === DrawAction.Scribble) {
-            const existingScribbleIndex = rooms[roomId].elements.findIndex(s => s.id === action.id);
-            if (existingScribbleIndex !== -1) {
-                rooms[roomId].elements[existingScribbleIndex].points.push(...action.points);
-            } else {
-                rooms[roomId].elements.push(action);
-            }
-        } else if (type === 'clear') {
+        if (type === 'clear') {
             rooms[roomId].elements = [];
+        } else {
+            const existingIndex = rooms[roomId].elements.findIndex(s => s.id === action.id);
+            if (existingIndex !== -1) {
+                const existing = rooms[roomId].elements[existingIndex];
+                if (action.remove) {
+                    rooms[roomId].elements.splice(existingIndex, 1);
+                } else if ((type === 'freedraw' || type === 'scribble' || existing.type === 'freedraw' || existing.type === 'scribble') && action.points) {
+                    if (!existing.points) existing.points = [];
+                    existing.points.push(...action.points);
+                } else {
+                    // Standard merge for other shapes
+                    rooms[roomId].elements[existingIndex] = { ...existing, ...action };
+                }
+            } else {
+                // New element creation
+                const newElement = { ...action };
+                if (!newElement.type) newElement.type = type;
+                rooms[roomId].elements.push(newElement);
+            }
         }
 
-        // Broadcast to others
+        // Broadcast to others in the room
         socket.to(roomId).emit('whiteboardAction', data);
     });
 

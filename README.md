@@ -8,10 +8,17 @@ Boardify is a high-performance, collaborative digital workspace designed for mod
 
 - **🚀 Real-Time Collaboration**: Work simultaneously with your team on a shared canvas with zero latency.
 - **🌓 Global Theming**: Seamlessly switch between a clean Light Mode and a premium, ultra-dark Futuristic Mode.
-- **🔍 Advanced Zooming**: 
-  - **Focal Point Zoom**: Focus on details with mouse-wheel zooming.
-  - **Pinch-to-Zoom**: Fluid mobile gestures for navigation.
-  - **Quick Controls**: Instant fit-to-screen and percentage tracking.
+- **🎨 Infinite Canvas**: Unlimited drawing space with smooth panning - draw as large as you need!
+- **🔍 Advanced Navigation**: 
+  - **Pan & Scroll**: Hold Spacebar + drag or use middle mouse button to navigate horizontally and vertically
+  - **Focal Point Zoom**: Focus on details with mouse-wheel zooming (10% - 1000%)
+  - **Pinch-to-Zoom**: Fluid mobile gestures for navigation
+  - **Quick Controls**: Instant reset and percentage tracking
+- **✏️ Professional Drawing Tools**:
+  - Free drawing with smooth lines
+  - Shapes (Rectangle, Circle, Arrow)
+  - Text with single-click editing
+  - Select, move, resize, and rotate any element
 - **💎 Futuristic UI**: Glassmorphism, mesh gradients, and smooth Framer Motion animations for a premium feel.
 - **🔐 Secure Sync**: Google & Email authentication powered by Firebase and custom JWT.
 - **📁 Board Management**: Save, rename, and organize multiple boards in your personal dashboard.

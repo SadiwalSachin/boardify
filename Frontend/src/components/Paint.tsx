@@ -6,13 +6,15 @@ import {
   Rect as KonvaRect,
   Image as KonvaImage,
   Line as KonvaLine,
+  Circle as KonvaCircle,
   Transformer,
   Group,
   Text as KonvaText,
   Path as KonvaPath,
+  Arrow as KonvaArrow,
 } from "react-konva";
 import { v4 as uuidv4 } from "uuid";
-import { Scribble, Size } from "../components/Paint.types";
+import { Scribble, Size, BoardElement, Circle, Rectangle, TextShape, Arrow } from "../components/Paint.types";
 import { DrawAction, PAINT_OPTIONS } from "./Paint.constants";
 import { SketchPicker } from "react-color";
 import {
@@ -73,31 +75,49 @@ const downloadURI = (uri: string, name: string) => {
 
 const SIZE = 500;
 
-const SidebarItem = ({ icon: Icon, label, active = false, onClick }: { icon: any, label: string, active?: boolean, onClick?: () => void }) => {
+const SidebarItem = ({
+  icon: Icon,
+  label,
+  active = false,
+  onClick,
+  isCollapsed = false
+}: {
+  icon: any,
+  label: string,
+  active?: boolean,
+  onClick?: () => void,
+  isCollapsed?: boolean
+}) => {
   const activeBg = useColorModeValue('blue.50', 'blue.900');
-  const textColor = useColorModeValue('gray.600', 'gray.400');
-  const activeTextColor = useColorModeValue('blue.600', 'blue.200');
+  const textColor = useColorModeValue('gray.500', 'gray.400');
+  const activeTextColor = useColorModeValue('blue.600', 'blue.300');
 
   return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors`}
-      style={{
-        backgroundColor: active ? activeBg : undefined,
-        color: active ? activeTextColor : textColor
-      }}
-    >
-      <Icon size={20} />
-      <span className="lg:inline">{label}</span>
-    </button>
+    <Tooltip label={isCollapsed ? label : ""} placement="right" hasArrow>
+      <button
+        onClick={onClick}
+        className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'px-4'} py-2.5 rounded-xl text-sm font-medium transition-all duration-200 hover:bg-gray-50 dark:hover:bg-whiteAlpha.50`}
+        style={{
+          backgroundColor: active ? activeBg : undefined,
+          color: active ? activeTextColor : textColor,
+          gap: isCollapsed ? '0' : '12px'
+        }}
+      >
+        <div className={`p-1 ${active ? 'scale-110' : 'scale-100'} transition-transform`}>
+          <Icon size={isCollapsed ? 22 : 20} />
+        </div>
+        {!isCollapsed && <span className="whitespace-nowrap overflow-hidden transition-all">{label}</span>}
+      </button>
+    </Tooltip>
   );
 };
 
 export const Paint: React.FC = React.memo(function Paint() {
+  // State
   const [size, setSize] = useState<Size>({ width: window.innerWidth, height: window.innerHeight });
   const [color, setColor] = useState("#000");
   const [drawAction, setDrawAction] = useState<DrawAction>(DrawAction.Select);
-  const [scribbles, setScribbles] = useState<Scribble[]>([]);
+  const [scribbles, setScribbles] = useState<BoardElement[]>([]);
   const [boardName, setBoardName] = useState<string>("Untitled Board");
   const [image, setImage] = useState<HTMLImageElement>();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -108,68 +128,37 @@ export const Paint: React.FC = React.memo(function Paint() {
   const navigate = useNavigate();
   const toast = useToast();
   const { user, getIdToken } = useAuth();
+  const { roomId } = useParams();
 
   const [isMobile] = useMediaQuery("(max-width: 1024px)");
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(!isMobile);
+
+  // Auto-close sidebar on mobile
+  useEffect(() => {
+    setIsSidebarOpen(!isMobile);
+  }, [isMobile]);
 
   const [history, setHistory] = useState<any[]>([]);
   const [currentStep, setCurrentStep] = useState(-1);
   const [activeUsers, setActiveUsers] = useState<any[]>([]);
   const [remoteCursors, setRemoteCursors] = useState<Record<string, { x: number, y: number, name: string, color: string }>>({});
   const { colorMode, toggleColorMode } = useColorMode();
-  const theme = colorMode; // Alias for compatibility with existing code
+  const theme = colorMode;
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [textEditingId, setTextEditingId] = useState<string | null>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const startShapePosRef = useRef<{ x: number, y: number } | null>(null);
 
-  const { roomId } = useParams();
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const lastPanPointRef = useRef<{ x: number, y: number } | null>(null);
+  const lastCursorEmitRef = useRef<number>(0);
 
-  // Load drawing from MongoDB on mount
-  useEffect(() => {
-    const fetchDrawing = async () => {
-      try {
-        const response = await axios.get(`${BACKEND_URL}/drawings/room/${roomId}`);
-        if (response.data) {
-          setScribbles(response.data.elements || []);
-          setBoardName(response.data.name || "Untitled Board");
-        }
-      } catch (error: any) {
-        console.error("No existing drawing found or error:", error);
-      }
-    };
-    if (roomId) fetchDrawing();
+  // Callbacks
+  const emitWhiteboardAction = useCallback((type: string, action: any) => {
+    socket.emit('whiteboardAction', { roomId, type, action });
   }, [roomId]);
-
-  const saveDrawing = async () => {
-    if (!user) return;
-    try {
-      const token = await getIdToken();
-      // Generate thumbnail
-      const thumbnail = stageRef?.current?.toDataURL();
-
-      await axios.post(`${BACKEND_URL}/drawings/save`, {
-        roomId,
-        elements: scribbles,
-        name: boardName,
-        thumbnail
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      toast({
-        title: "Board Saved",
-        description: "Your drawing has been stored in the cloud.",
-        status: "success",
-        duration: 2000,
-      });
-    } catch (error: any) {
-      toast({
-        title: "Save Failed",
-        description: "Could not save your drawing.",
-        status: "error",
-        duration: 3000,
-      });
-    }
-  };
 
   const addToHistory = useCallback((action: any) => {
     setHistory(prevHistory => {
@@ -179,6 +168,34 @@ export const Paint: React.FC = React.memo(function Paint() {
     setCurrentStep(prevStep => prevStep + 1);
   }, [currentStep]);
 
+  const onClear = useCallback(() => {
+    const selectedNodes = transformerRef.current?.nodes();
+    if (selectedNodes && selectedNodes.length > 0) {
+      const idsToRemove = selectedNodes.map((node: any) => node.id());
+      setScribbles(prev => {
+        const newState = prev.filter(s => !idsToRemove.includes(s.id));
+        addToHistory({ scribbles: newState, image });
+        return newState;
+      });
+      idsToRemove.forEach((id: string) => {
+        emitWhiteboardAction('update', { id, remove: true });
+      });
+      transformerRef.current.nodes([]);
+      toast({ title: "Selected shapes deleted", status: "info", duration: 2000 });
+    } else {
+      setScribbles([]);
+      setImage(undefined);
+      emitWhiteboardAction('clear', {});
+      addToHistory({ scribbles: [], image: undefined });
+      toast({ title: "Board cleared", status: "info", duration: 2000 });
+    }
+  }, [emitWhiteboardAction, addToHistory, image, toast]);
+
+  const applyState = useCallback((state: any) => {
+    setScribbles(state.scribbles || []);
+    setImage(state.image);
+  }, []);
+
   const undo = useCallback(() => {
     if (currentStep > 0) {
       const prevStep = currentStep - 1;
@@ -187,7 +204,7 @@ export const Paint: React.FC = React.memo(function Paint() {
       applyState(prevState);
       emitWhiteboardAction('undo', { step: prevStep });
     }
-  }, [currentStep, history]);
+  }, [currentStep, history, applyState, emitWhiteboardAction]);
 
   const redo = useCallback(() => {
     if (currentStep < history.length - 1) {
@@ -197,51 +214,105 @@ export const Paint: React.FC = React.memo(function Paint() {
       applyState(nextState);
       emitWhiteboardAction('redo', { step: nextStep });
     }
-  }, [currentStep, history]);
+  }, [currentStep, history, applyState, emitWhiteboardAction]);
 
-  const applyState = useCallback((state: any) => {
-    setScribbles(state.scribbles || []);
-    setImage(state.image);
-  }, []);
+  const handleTextEdit = (e: KonvaEventObject<any> | null, id: string, text: string, textColor: string, x: number, y: number, fontSize: number = 20) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    setTextEditingId(id);
+    let areaPosition = { x: 0, y: 0 };
+    if (e && e.target) {
+      const textNode = e.target as any;
+      const pos = textNode.absolutePosition();
+      const stageBox = stage.container().getBoundingClientRect();
+      areaPosition = { x: stageBox.left + pos.x * scale + position.x, y: stageBox.top + pos.y * scale + position.y };
+    } else {
+      const stageBox = stage.container().getBoundingClientRect();
+      areaPosition = { x: stageBox.left + x * scale + position.x, y: stageBox.top + y * scale + position.y };
+    }
+    if (textAreaRef.current) {
+      const area = textAreaRef.current;
+      area.value = text;
+      area.style.top = `${areaPosition.y}px`;
+      area.style.left = `${areaPosition.x}px`;
+      area.style.width = "200px";
+      area.style.fontSize = `${fontSize * scale}px`;
+      area.style.color = textColor;
+      area.style.background = theme === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(30,30,30,0.95)';
+      area.style.border = '2px solid #3b82f6';
+      area.style.borderRadius = '6px';
+      area.style.padding = '8px';
+      setTimeout(() => { area.focus(); area.select(); }, 10);
+    }
+  };
+
+  const handleTextBlur = () => {
+    if (textEditingId && textAreaRef.current) {
+      const text = textAreaRef.current.value.trim();
+      if (text === '' || text === 'Click to edit') {
+        setScribbles(prev => prev.filter(item => item.id !== textEditingId));
+        emitWhiteboardAction('update', { id: textEditingId, remove: true });
+      } else {
+        setScribbles(prev => prev.map(item => item.id === textEditingId ? { ...item, text: text } as TextShape : item));
+        emitWhiteboardAction('update', { id: textEditingId, text });
+      }
+      setTextEditingId(null);
+    }
+  };
+
+  const saveDrawing = async () => {
+    if (!user) return;
+    try {
+      const token = await getIdToken();
+      const thumbnail = stageRef?.current?.toDataURL();
+      await axios.post(`${BACKEND_URL}/drawings/save`, { roomId, elements: scribbles, name: boardName, thumbnail }, { headers: { Authorization: `Bearer ${token}` } });
+      toast({ title: "Board Saved", status: "success", duration: 2000 });
+    } catch (error: any) {
+      toast({ title: "Save Failed", status: "error", duration: 3000 });
+    }
+  };
 
   const onImportImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
       const imageUrl = URL.createObjectURL(e.target.files?.[0]);
-      const image = new Image(SIZE / 2, SIZE / 2);
-      image.src = imageUrl;
-      setImage(image);
+      const img = new Image(SIZE / 2, SIZE / 2);
+      img.src = imageUrl;
+      setImage(img);
     }
     e.target.files = null;
   }, []);
 
-  const emitWhiteboardAction = useCallback((type: string, action: any) => {
-    socket.emit('whiteboardAction', { roomId, type, action });
-  }, [roomId]);
-
   const handleWhiteboardAction = useCallback((action: any) => {
     switch (action.type) {
       case DrawAction.Scribble:
+      case DrawAction.Rectangle:
+      case DrawAction.Circle:
+      case DrawAction.Arrow:
+      case DrawAction.Text:
         setScribbles((prevScribbles) => {
           const existingScribbleIndex = prevScribbles.findIndex(s => s.id === action.action.id);
           if (existingScribbleIndex !== -1) {
             const updatedScribbles = [...prevScribbles];
-            updatedScribbles[existingScribbleIndex] = {
-              ...updatedScribbles[existingScribbleIndex],
-              points: [...updatedScribbles[existingScribbleIndex].points, ...action.action.points]
-            };
+            const existing = updatedScribbles[existingScribbleIndex];
+            if ((action.type === DrawAction.Scribble || action.type === 'scribble') && 'points' in action.action) {
+              updatedScribbles[existingScribbleIndex] = { ...existing, points: [...(existing as Scribble).points, ...action.action.points] } as Scribble;
+            } else {
+              updatedScribbles[existingScribbleIndex] = { ...existing, ...action.action };
+            }
             return updatedScribbles;
           }
-          return [...prevScribbles, action.action];
+          const newShape = { ...action.action, type: action.action.type || action.type };
+          return [...prevScribbles, newShape];
         });
         break;
+      case 'update':
+        if (action.action.remove) { setScribbles((prev) => prev.filter(s => s.id !== action.action.id)); }
+        else { setScribbles((prev) => prev.map(s => s.id === action.action.id ? { ...s, ...action.action } : s)); }
+        break;
       case 'clear':
-        setScribbles([]);
-        setImage(undefined);
+        setScribbles([]); setImage(undefined);
         break;
       case 'undo':
-        setCurrentStep(action.action.step);
-        applyState(history[action.action.step]);
-        break;
       case 'redo':
         setCurrentStep(action.action.step);
         applyState(history[action.action.step]);
@@ -249,41 +320,19 @@ export const Paint: React.FC = React.memo(function Paint() {
     }
   }, [applyState, history]);
 
+  // Effects
   useEffect(() => {
     if (!roomId) return;
-
-    const onConnect = () => {
-      console.log(`[SOCKET] Connected with ID: ${socket.id}. Joining room: ${roomId}`);
-      socket.emit('joinRoom', { roomId, user });
-    };
-
-    if (socket.connected) {
-      onConnect();
-    }
-
+    const onConnect = () => socket.emit('joinRoom', { roomId, user });
+    if (socket.connected) onConnect();
     socket.on('connect', onConnect);
-    socket.on('disconnect', () => console.warn('[SOCKET] Disconnected from server'));
-
     socket.on('roomState', ({ users, elements }) => {
       setActiveUsers(users.filter((u: any) => u.id !== socket.id));
-      if (elements && elements.length > 0) {
-        setScribbles(elements);
-      }
+      if (elements && elements.length > 0) setScribbles(elements);
     });
-
-    socket.on('usersUpdated', (users) => {
-      setActiveUsers(users.filter((u: any) => u.id !== socket.id));
-    });
-
-    socket.on('cursorMoved', ({ userId, x, y }) => {
-      setRemoteCursors(prev => ({
-        ...prev,
-        [userId]: { ...prev[userId], x, y }
-      }));
-    });
-
+    socket.on('usersUpdated', (users) => setActiveUsers(users.filter((u: any) => u.id !== socket.id)));
+    socket.on('cursorMoved', ({ userId, x, y }) => setRemoteCursors(prev => ({ ...prev, [userId]: { ...prev[userId], x, y } })));
     socket.on('whiteboardAction', handleWhiteboardAction);
-
     return () => {
       socket.off('connect', onConnect);
       socket.off('roomState');
@@ -294,89 +343,146 @@ export const Paint: React.FC = React.memo(function Paint() {
   }, [roomId, user, handleWhiteboardAction]);
 
   useEffect(() => {
-    // Update remote cursors metadata when users list changes
+    const fetchDrawing = async () => {
+      try {
+        const response = await axios.get(`${BACKEND_URL}/drawings/room/${roomId}`);
+        if (response.data) {
+          setScribbles(response.data.elements || []);
+          setBoardName(response.data.name || "Untitled Board");
+        }
+      } catch (error: any) { }
+    };
+    if (roomId) fetchDrawing();
+  }, [roomId]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !textEditingId && !isSpacePressed) { e.preventDefault(); setIsSpacePressed(true); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !textEditingId) {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+        const selectedNodes = transformerRef.current?.nodes();
+        if (selectedNodes && selectedNodes.length > 0) {
+          const idsToRemove = selectedNodes.map((node: any) => node.id());
+          setScribbles(prev => {
+            const newState = prev.filter(s => !idsToRemove.includes(s.id));
+            addToHistory({ scribbles: newState, image });
+            return newState;
+          });
+          idsToRemove.forEach((id: string) => emitWhiteboardAction('update', { id, remove: true }));
+          transformerRef.current.nodes([]);
+        }
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') { e.preventDefault(); setIsSpacePressed(false); setIsPanning(false); lastPanPointRef.current = null; }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
+  }, [textEditingId, isSpacePressed, image, addToHistory, emitWhiteboardAction]);
+
+  useEffect(() => {
     const newCursors: any = {};
     activeUsers.forEach(u => {
-      newCursors[u.id] = {
-        x: remoteCursors[u.id]?.x || 0,
-        y: remoteCursors[u.id]?.y || 0,
-        name: u.name,
-        color: u.color
-      };
+      newCursors[u.id] = { x: remoteCursors[u.id]?.x || 0, y: remoteCursors[u.id]?.y || 0, name: u.name, color: u.color };
     });
     setRemoteCursors(newCursors);
   }, [activeUsers]);
 
   const onStageMouseDown = useCallback((e: KonvaEventObject<MouseEvent | TouchEvent>) => {
-    if (drawAction === DrawAction.Select) return;
-
-    if (e.evt && 'preventDefault' in e.evt) {
-      e.evt.preventDefault();
-    }
-
-    isPaintRef.current = true;
     const stage = stageRef?.current;
     if (!stage) return;
-
     const pos = stage.getPointerPosition();
     if (!pos) return;
-
+    const isMiddleButton = 'button' in e.evt && (e.evt as any).button === 1;
+    if (isSpacePressed || isMiddleButton) {
+      setIsPanning(true);
+      lastPanPointRef.current = { x: pos.x, y: pos.y };
+      return;
+    }
+    if (drawAction === DrawAction.Select) return;
+    const clickedOnShape = e.target !== e.target.getStage() && e.target.id() !== 'bg';
+    if (clickedOnShape && drawAction !== DrawAction.Text) return;
     const oldScale = stage.scaleX();
     const x = (pos.x - stage.x()) / oldScale;
     const y = (pos.y - stage.y()) / oldScale;
-
     const id = uuidv4();
     currentShapeRef.current = id;
-    let newAction: any = { id, x, y, color };
-    if (drawAction === DrawAction.Scribble) {
-      newAction.points = [x, y];
-      setScribbles((prevScribbles) => [...prevScribbles, newAction as Scribble]);
+    startShapePosRef.current = { x, y };
+    isPaintRef.current = true;
+    let newAction: any = { id, x, y, color, type: drawAction };
+    if (drawAction === DrawAction.Scribble) { newAction.x = 0; newAction.y = 0; newAction.points = [x, y]; newAction.type = 'freedraw'; }
+    else if (drawAction === DrawAction.Rectangle) { newAction.width = 0; newAction.height = 0; newAction.type = 'rectangle'; }
+    else if (drawAction === DrawAction.Circle) { newAction.radius = 0; newAction.type = 'circle'; }
+    else if (drawAction === DrawAction.Arrow) { newAction.points = [x, y, x, y]; newAction.type = 'arrow'; }
+    else if (drawAction === DrawAction.Text) {
+      newAction.text = "Click to edit"; newAction.fontSize = 20; newAction.type = 'text';
+      setScribbles((prev) => [...prev, newAction as BoardElement]);
+      emitWhiteboardAction(drawAction, newAction);
+      setTimeout(() => handleTextEdit(null, id, "Click to edit", color, x, y, 20), 50);
+      isPaintRef.current = false; currentShapeRef.current = undefined; startShapePosRef.current = null;
+      return;
     }
+    setScribbles((prev) => [...prev, newAction as BoardElement]);
     emitWhiteboardAction(drawAction, newAction);
-  }, [drawAction, color, emitWhiteboardAction]);
+  }, [drawAction, color, emitWhiteboardAction, isSpacePressed, scale, position, theme]);
 
-  const onStageMouseMove = useCallback((e: KonvaEventObject<MouseEvent | TouchEvent>) => {
+  const onStageMouseMove = useCallback((_e: KonvaEventObject<MouseEvent | TouchEvent>) => {
     const stage = stageRef?.current;
     if (!stage) return;
-
     const pos = stage.getPointerPosition();
     if (!pos) return;
-
+    if (isPanning && lastPanPointRef.current) {
+      const dx = pos.x - lastPanPointRef.current.x;
+      const dy = pos.y - lastPanPointRef.current.y;
+      setPosition(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+      lastPanPointRef.current = { x: pos.x, y: pos.y };
+      return;
+    }
     const oldScale = stage.scaleX();
     const x = (pos.x - stage.x()) / oldScale;
     const y = (pos.y - stage.y()) / oldScale;
-
-    // Emit cursor position to others
-    socket.emit('cursorMove', { roomId, x, y });
-
+    const now = Date.now();
+    if (now - lastCursorEmitRef.current > 50) { socket.emit('cursorMove', { roomId, x, y }); lastCursorEmitRef.current = now; }
     if (drawAction === DrawAction.Select || !isPaintRef.current) return;
-
-    if (e.evt && 'preventDefault' in e.evt) {
-      e.evt.preventDefault();
-    }
-
     const id = currentShapeRef.current;
-    let updatedShape;
+    const startPos = startShapePosRef.current;
+    if (!id || !startPos) return;
+    let updatedShape: any = null;
     if (drawAction === DrawAction.Scribble) {
-      setScribbles((prevScribbles) =>
-        prevScribbles.map((prevScribble) =>
-          prevScribble.id === id
-            ? { ...prevScribble, points: [...prevScribble.points, x, y] }
-            : prevScribble
-        )
-      );
-      updatedShape = { id, points: [x, y] };
+      setScribbles((prev) => prev.map((s) => s.id === id ? { ...s, points: [...(s as Scribble).points, x, y] } as Scribble : s));
+      updatedShape = { id, points: [x, y], type: DrawAction.Scribble };
+    } else if (drawAction === DrawAction.Rectangle) {
+      const w = x - startPos.x; const h = y - startPos.y;
+      setScribbles(prev => prev.map(s => s.id === id ? { ...s, width: w, height: h } as Rectangle : s));
+      updatedShape = { id, width: w, height: h, type: DrawAction.Rectangle };
+    } else if (drawAction === DrawAction.Circle) {
+      const r = Math.sqrt(Math.pow(x - startPos.x, 2) + Math.pow(y - startPos.y, 2));
+      setScribbles(prev => prev.map(s => s.id === id ? { ...s, radius: r } as Circle : s));
+      updatedShape = { id, radius: r, type: DrawAction.Circle };
+    } else if (drawAction === DrawAction.Arrow) {
+      setScribbles(prev => prev.map(s => s.id === id ? { ...s, points: [startPos.x, startPos.y, x, y] } as Arrow : s));
+      updatedShape = { id, points: [startPos.x, startPos.y, x, y], type: DrawAction.Arrow };
     }
     if (updatedShape) emitWhiteboardAction(drawAction, updatedShape);
-  }, [drawAction, emitWhiteboardAction, roomId]);
+  }, [drawAction, emitWhiteboardAction, roomId, isPanning, textEditingId]);
 
-  const onClear = useCallback(() => {
-    setScribbles([]);
-    setImage(undefined);
-    emitWhiteboardAction('clear', {});
-    addToHistory({ scribbles: [], image: undefined });
-  }, [emitWhiteboardAction, addToHistory]);
+  const onTransformEnd = useCallback((e: KonvaEventObject<Event>) => {
+    const node = e.target;
+    // transformer is changing scale, rotation and position
+    const id = node.id();
 
+    const props = {
+      x: node.x(),
+      y: node.y(),
+      scaleX: node.scaleX(),
+      scaleY: node.scaleY(),
+      rotation: node.rotation(),
+    };
+
+    setScribbles(prev => prev.map(s => s.id === id ? { ...s, ...props } : s));
+    emitWhiteboardAction('update', { id, ...props });
+  }, [emitWhiteboardAction]);
 
   const onExportClick = useCallback(() => {
     const dataUri = stageRef?.current?.toDataURL({ pixelRatio: 3 });
@@ -384,11 +490,23 @@ export const Paint: React.FC = React.memo(function Paint() {
   }, []);
 
   const onStageMouseUp = useCallback(() => {
-    if (isPaintRef.current) {
-      addToHistory({ scribbles, image });
+    // Stop panning
+    if (isPanning) {
+      setIsPanning(false);
+      lastPanPointRef.current = null;
+      return;
     }
+
     isPaintRef.current = false;
-  }, [scribbles, image, addToHistory]);
+    startShapePosRef.current = null;
+    currentShapeRef.current = undefined;
+    // We update history only after mouse up to keep it clean
+    // Need to use functional setHistory to avoid stale scribbles or we can use another state/ref
+    setScribbles(curr => {
+      addToHistory({ scribbles: curr, image });
+      return curr;
+    });
+  }, [image, addToHistory, isPanning]);
 
   const onShapeClick = useCallback((e: KonvaEventObject<MouseEvent | TouchEvent>) => {
     if (drawAction !== DrawAction.Select) return;
@@ -511,7 +629,7 @@ export const Paint: React.FC = React.memo(function Paint() {
 
   return (
     <div className={`flex h-[100dvh] w-full ${useColorModeValue('bg-white', '#0f172a')} font-sans overflow-hidden transition-colors duration-300`}>
-      {/* Sidebar Overlay */}
+      {/* Sidebar Overlay (Mobile) */}
       <AnimatePresence>
         {isSidebarOpen && isMobile && (
           <motion.div
@@ -524,34 +642,96 @@ export const Paint: React.FC = React.memo(function Paint() {
         )}
       </AnimatePresence>
 
-      {/* Sidebar */}
+      {/* Main Sidebar */}
       <aside className={`
-        ${isMobile ? 'fixed inset-y-0 left-0 z-[50] w-64' : 'w-64 z-20'} 
-        border-r ${useColorModeValue('border-gray-100', 'whiteAlpha.100')} flex flex-col p-4 ${useColorModeValue('bg-white', '#0f172a')} transform transition-transform duration-300 ease-in-out
+        ${isMobile ? 'fixed inset-y-0 left-0 z-[50]' : 'relative h-full'} 
+        ${isSidebarOpen ? (isMobile ? 'w-64' : 'w-64') : (isMobile ? 'w-0' : 'w-20')}
+        border-r ${useColorModeValue('border-gray-100', 'whiteAlpha.100')} 
+        flex flex-col p-3 ${useColorModeValue('bg-white', '#0f172a')} 
+        transition-all duration-300 ease-in-out overflow-hidden
         ${isMobile && !isSidebarOpen ? '-translate-x-full' : 'translate-x-0'}
       `}>
-        <div className="flex items-center justify-between gap-2 px-2 mb-8">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate("/dashboard")}>
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
-              <LuLayoutDashboard size={20} />
+        <div className={`flex items-center ${!isSidebarOpen && !isMobile ? 'justify-center' : 'justify-between'} gap-2 px-2 mb-8 mt-1`}>
+          <div className="flex items-center gap-3 cursor-pointer overflow-hidden" onClick={() => navigate("/dashboard")}>
+            <div className="shrink-0 w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+              <LuLayoutDashboard size={22} />
             </div>
-            <span className={`font-bold text-xl ${useColorModeValue('text-gray-900', 'white')}`}>Boardify</span>
+            {(isSidebarOpen || isMobile) && (
+              <span className={`font-bold text-xl ${useColorModeValue('text-gray-900', 'white')} transition-all`}>Boardify</span>
+            )}
           </div>
-          {isMobile && (
+          {isMobile && isSidebarOpen && (
             <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg">
               <LuX size={20} />
             </button>
           )}
         </div>
 
-        <nav className="flex-1 flex flex-col gap-1">
-          <SidebarItem icon={LuLayout} label="Dashboard" active onClick={() => navigate("/dashboard")} />
-          <SidebarItem icon={LuUsers} label="Collaborators" />
-          <SidebarItem icon={LuClock} label="History" />
-        </nav>
+        {/* Navigation Links */}
+        <div className="flex flex-col gap-1 mb-6">
+          <SidebarItem icon={LuLayout} label="Dashboard" active={false} onClick={() => navigate("/dashboard")} isCollapsed={!isSidebarOpen && !isMobile} />
+          <SidebarItem icon={LuUsers} label="Collaborators" isCollapsed={!isSidebarOpen && !isMobile} />
+          <SidebarItem icon={LuClock} label="History" isCollapsed={!isSidebarOpen && !isMobile} />
+        </div>
 
-        <div className="mt-auto pt-4 border-t border-gray-50 flex flex-col gap-1">
-          <SidebarItem icon={LuSettings} label="Settings" />
+        <div className={`h-[1px] ${useColorModeValue('bg-gray-100', 'whiteAlpha.100')} mx-2 mb-6`}></div>
+
+        {/* Workspace Tools */}
+        {(isSidebarOpen || isMobile) && (
+          <ChakraText fontSize="2xs" fontWeight="bold" color="gray.400" px={4} mb={3} textTransform="uppercase" letterSpacing="widest">
+            Workbench
+          </ChakraText>
+        )}
+
+        <div className="flex flex-col gap-1.5 flex-1 overflow-y-auto no-scrollbar">
+          {PAINT_OPTIONS.map(({ id, icon, label }) => (
+            <SidebarItem
+              key={id}
+              icon={() => icon}
+              label={label}
+              active={drawAction === id}
+              onClick={() => setDrawAction(id as DrawAction)}
+              isCollapsed={!isSidebarOpen && !isMobile}
+            />
+          ))}
+
+          <div className={`h-[1px] ${useColorModeValue('bg-gray-100', 'whiteAlpha.100')} mx-2 my-2`}></div>
+
+          {/* Color Picker Sidebar Integrated */}
+          <div className={`px-1.5 ${!isSidebarOpen && !isMobile ? 'flex justify-center' : ''}`}>
+            <Popover placement="right">
+              <PopoverTrigger>
+                <button className={`w-full group flex items-center ${!isSidebarOpen && !isMobile ? 'justify-center' : 'px-3'} py-2 rounded-xl transition-all hover:bg-gray-50 dark:hover:bg-whiteAlpha.50`}>
+                  <div
+                    className="w-7 h-7 rounded-lg border shadow-sm shrink-0 transition-transform group-hover:scale-110"
+                    style={{ backgroundColor: color }}
+                  />
+                  {(isSidebarOpen || isMobile) && (
+                    <span className="ml-3 text-sm font-medium text-gray-500 dark:text-gray-400">Appearance</span>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent border="none" borderRadius="2xl" shadow="2xl" p={0} overflow="hidden">
+                {/*@ts-ignore*/}
+                <SketchPicker
+                  color={color}
+                  onChangeComplete={(selectedColor) => setColor(selectedColor.hex)}
+                  width="220"
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          <SidebarItem
+            icon={LuTrash2}
+            label="Delete / Clear"
+            onClick={onClear}
+            isCollapsed={!isSidebarOpen && !isMobile}
+          />
+        </div>
+
+        <div className="mt-auto pt-4 border-t border-gray-100 flex flex-col gap-1">
+          <SidebarItem icon={LuSettings} label="Settings" isCollapsed={!isSidebarOpen && !isMobile} />
         </div>
       </aside>
 
@@ -560,14 +740,13 @@ export const Paint: React.FC = React.memo(function Paint() {
         {/* Top Header */}
         <header className={`h-16 border-b ${useColorModeValue('border-gray-100', 'whiteAlpha.100')} ${useColorModeValue('bg-white', '#0f172a')} flex items-center justify-between px-4 sm:px-6 z-10 shrink-0 transition-colors`}>
           <div className="flex items-center gap-2 sm:gap-4">
-            {isMobile && (
-              <button
-                onClick={() => setIsSidebarOpen(true)}
-                className={`p-2 -ml-2 ${useColorModeValue('text-gray-500', 'gray.400')} hover:bg-gray-100 rounded-lg`}
-              >
-                <LuMenu size={24} />
-              </button>
-            )}
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className={`p-2 -ml-2 ${useColorModeValue('text-gray-500', 'gray.400')} hover:bg-gray-100 rounded-lg`}
+              title={isSidebarOpen ? "Hide Sidebar" : "Show Sidebar"}
+            >
+              <LuMenu size={24} />
+            </button>
             <button
               onClick={() => navigate("/dashboard")}
               className={`hidden sm:block p-2 hover:bg-gray-50 rounded-lg ${useColorModeValue('text-gray-500', 'gray.400')} transition-colors`}
@@ -657,54 +836,7 @@ export const Paint: React.FC = React.memo(function Paint() {
           </div>
         </header>
 
-        {/* Drawing Toolbar - Floating */}
-        <div className={`
-          absolute z-20 flex flex-col gap-1.5 p-1.5 ${useColorModeValue('bg-white', 'gray.800')} rounded-2xl shadow-xl border ${useColorModeValue('border-gray-100', 'whiteAlpha.100')}
-          ${isMobile ? 'left-3 top-20' : 'left-6 top-24'}
-        `}>
-          {PAINT_OPTIONS.map(({ id, icon, label }) => (
-            <button
-              key={id}
-              onClick={() => setDrawAction(id)}
-              className={`p-2.5 sm:p-3 rounded-xl transition-all ${drawAction === id
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
-                : `${useColorModeValue('text-gray-500', 'gray.400')} hover:bg-gray-50 dark:hover:bg-whiteAlpha.100`
-                }`}
-              title={label}
-            >
-              {React.cloneElement(icon as React.ReactElement, { size: isMobile ? 18 : 20 })}
-            </button>
-          ))}
 
-          <div className={`h-[1px] ${useColorModeValue('bg-gray-100', 'whiteAlpha.100')} mx-2 my-1`}></div>
-
-          <button
-            onClick={onClear}
-            className={`p-2.5 sm:p-3 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all`}
-            title="Clear Board"
-          >
-            <LuTrash2 size={isMobile ? 18 : 20} />
-          </button>
-
-          <Popover placement="right">
-            <PopoverTrigger>
-              <div className={`p-1 rounded-xl cursor-pointer hover:bg-gray-50 dark:hover:bg-whiteAlpha.100 transition-all flex items-center justify-center`}>
-                <div
-                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg shadow-inner border ${useColorModeValue('border-gray-200', 'whiteAlpha.200')}`}
-                  style={{ backgroundColor: color }}
-                />
-              </div>
-            </PopoverTrigger>
-            <PopoverContent border="none" borderRadius="2xl" shadow="2xl" p={0} overflow="hidden">
-              {/*@ts-ignore*/}
-              <SketchPicker
-                color={color}
-                onChangeComplete={(selectedColor) => setColor(selectedColor.hex)}
-                width={isMobile ? "180" : "220"}
-              />
-            </PopoverContent>
-          </Popover>
-        </div>
 
         {/* Zoom Controls */}
         <div className={`
@@ -738,11 +870,86 @@ export const Paint: React.FC = React.memo(function Paint() {
           </button>
         </div>
 
+        {/* Pan Mode Indicator */}
+        {isSpacePressed && (
+          <div className={`
+            absolute z-20 flex items-center gap-2 ${useColorModeValue('bg-blue-50', 'blue.900')} text-blue-600 dark:text-blue-200 rounded-xl shadow-lg border border-blue-200 dark:border-blue-700 px-4 py-2
+            ${isMobile ? 'left-3 bottom-3' : 'left-6 bottom-6'}
+          `}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            <span className="text-sm font-medium">Pan Mode Active - Click and drag to move canvas</span>
+          </div>
+        )}
+
+        {/* Mobile Floating Toolbar */}
+        {isMobile && !isSidebarOpen && (
+          <motion.div
+            initial={{ y: 100, x: '-50%', opacity: 0 }}
+            animate={{ y: 0, x: '-50%', opacity: 1 }}
+            className={`
+              fixed bottom-6 left-1/2 z-30 flex items-center 
+              ${useColorModeValue('bg-white/90', '#1e293b/90')} 
+              backdrop-blur-md rounded-2xl shadow-2xl border 
+              ${useColorModeValue('border-gray-200', 'whiteAlpha.200')} 
+              p-1.5 gap-0.5
+            `}
+          >
+            {PAINT_OPTIONS.map(({ id, icon, label }) => (
+              <Tooltip key={id} label={label} placement="top">
+                <button
+                  onClick={() => setDrawAction(id as DrawAction)}
+                  className={`
+                    p-3 rounded-xl transition-all duration-200
+                    ${drawAction === id
+                      ? (useColorModeValue('bg-blue-50 text-blue-600', 'bg-blue-900/40 text-blue-400'))
+                      : (useColorModeValue('text-gray-500 hover:bg-gray-100', 'text-gray-400 hover:bg-whiteAlpha.100'))}
+                  `}
+                >
+                  {icon}
+                </button>
+              </Tooltip>
+            ))}
+
+            <div className={`w-[1px] h-6 ${useColorModeValue('bg-gray-200', 'whiteAlpha.200')} mx-1`} />
+
+            <Popover placement="top">
+              <PopoverTrigger>
+                <button className={`p-1.5 rounded-xl ${useColorModeValue('hover:bg-gray-100', 'hover:bg-whiteAlpha.100')} transition-all`}>
+                  <div
+                    className="w-8 h-8 rounded-lg border-2 shadow-sm border-white dark:border-gray-700"
+                    style={{ backgroundColor: color }}
+                  />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent border="none" borderRadius="2xl" shadow="2xl" p={0} overflow="hidden">
+                {/*@ts-ignore*/}
+                <SketchPicker color={color} onChangeComplete={(c) => setColor(c.hex)} width="200" />
+              </PopoverContent>
+            </Popover>
+
+            <div className={`w-[1px] h-6 ${useColorModeValue('bg-gray-200', 'whiteAlpha.200')} mx-1`} />
+
+            <Tooltip label="Delete / Clear" placement="top">
+              <button
+                onClick={onClear}
+                className={`p-3 rounded-xl ${useColorModeValue('text-gray-500 hover:bg-red-50 hover:text-red-600', 'text-gray-400 hover:bg-red-900/20 hover:text-red-400')} transition-all`}
+              >
+                <LuTrash2 size={20} />
+              </button>
+            </Tooltip>
+          </motion.div>
+        )}
+
         {/* Canvas Area */}
         <div
           id="canvas-container"
           className={`flex-1 relative overflow-hidden transition-colors duration-300 ${theme === 'light' ? 'bg-gray-50' : 'bg-[#121212]'}`}
-          style={{ touchAction: 'none' }}
+          style={{
+            touchAction: 'none',
+            cursor: isSpacePressed || isPanning ? 'grab' : 'default'
+          }}
         >
           {/* Subtle Grid Pattern */}
           <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${theme === 'light' ? 'opacity-[0.03]' : 'opacity-[0.07]'}`}
@@ -770,12 +977,12 @@ export const Paint: React.FC = React.memo(function Paint() {
           >
             <Layer>
               <KonvaRect
+                id="bg"
                 x={0}
                 y={0}
                 height={size.height}
                 width={size.width}
                 fill="transparent"
-                id="bg"
                 onClick={onBgClick}
                 onTap={onBgClick}
               />
@@ -791,20 +998,123 @@ export const Paint: React.FC = React.memo(function Paint() {
                 />
               )}
 
-              {scribbles.map((scribble) => (
-                <KonvaLine
-                  key={scribble.id}
-                  id={scribble.id}
-                  lineCap="round"
-                  lineJoin="round"
-                  stroke={scribble?.color}
-                  strokeWidth={4}
-                  points={scribble.points}
-                  onClick={onShapeClick}
-                  onTap={onShapeClick}
-                  draggable={isDraggable}
-                />
-              ))}
+              {scribbles.map((scribble) => {
+                const type = scribble.type || ((scribble as any).points ? 'freedraw' : '');
+
+                switch (type) {
+                  case 'freedraw':
+                  case 'scribble':
+                    return (
+                      <KonvaLine
+                        key={scribble.id}
+                        id={scribble.id}
+                        lineCap="round"
+                        lineJoin="round"
+                        stroke={scribble?.color}
+                        strokeWidth={4}
+                        points={(scribble as Scribble).points}
+                        rotation={scribble.rotation || 0}
+                        scaleX={scribble.scaleX || 1}
+                        scaleY={scribble.scaleY || 1}
+                        x={scribble.x || 0}
+                        y={scribble.y || 0}
+                        onClick={onShapeClick}
+                        onTap={onShapeClick}
+                        draggable={isDraggable}
+                        onTransformEnd={onTransformEnd}
+                        onDragEnd={onTransformEnd}
+                      />
+                    );
+                  case 'rectangle':
+                    const rect = scribble as Rectangle;
+                    return (
+                      <KonvaRect
+                        key={rect.id}
+                        id={rect.id}
+                        x={rect.x}
+                        y={rect.y}
+                        width={rect.width}
+                        height={rect.height}
+                        rotation={rect.rotation || 0}
+                        scaleX={rect.scaleX || 1}
+                        scaleY={rect.scaleY || 1}
+                        stroke={rect.color}
+                        strokeWidth={2}
+                        onClick={onShapeClick}
+                        onTap={onShapeClick}
+                        draggable={isDraggable}
+                        onTransformEnd={onTransformEnd}
+                        onDragEnd={onTransformEnd}
+                      />
+                    );
+                  case 'circle':
+                    const circle = scribble as Circle;
+                    return (
+                      <KonvaCircle
+                        key={circle.id}
+                        id={circle.id}
+                        x={circle.x}
+                        y={circle.y}
+                        radius={circle.radius}
+                        rotation={circle.rotation || 0}
+                        scaleX={circle.scaleX || 1}
+                        scaleY={circle.scaleY || 1}
+                        stroke={circle.color}
+                        strokeWidth={2}
+                        onClick={onShapeClick}
+                        onTap={onShapeClick}
+                        draggable={isDraggable}
+                        onTransformEnd={onTransformEnd}
+                        onDragEnd={onTransformEnd}
+                      />
+                    );
+                  case 'arrow':
+                    const arrow = scribble as Arrow;
+                    return (
+                      <KonvaArrow
+                        key={arrow.id}
+                        id={arrow.id}
+                        points={arrow.points}
+                        stroke={arrow.color}
+                        fill={arrow.color}
+                        strokeWidth={4}
+                        rotation={arrow.rotation || 0}
+                        scaleX={arrow.scaleX || 1}
+                        scaleY={arrow.scaleY || 1}
+                        onClick={onShapeClick}
+                        onTap={onShapeClick}
+                        draggable={isDraggable}
+                        onTransformEnd={onTransformEnd}
+                        onDragEnd={onTransformEnd}
+                      />
+                    );
+                  case 'text':
+                    const textShape = scribble as TextShape;
+                    return (
+                      <KonvaText
+                        key={textShape.id}
+                        id={textShape.id}
+                        x={textShape.x}
+                        y={textShape.y}
+                        text={textShape.text}
+                        fontSize={textShape.fontSize}
+                        rotation={textShape.rotation || 0}
+                        scaleX={textShape.scaleX || 1}
+                        scaleY={textShape.scaleY || 1}
+                        fill={textShape.color}
+                        onClick={onShapeClick}
+                        onTap={onShapeClick}
+                        onDblClick={(e) => handleTextEdit(e, textShape.id, textShape.text, textShape.color, textShape.x, textShape.y, textShape.fontSize)}
+                        onDblTap={(e) => handleTextEdit(e, textShape.id, textShape.text, textShape.color, textShape.x, textShape.y, textShape.fontSize)}
+                        draggable={isDraggable}
+                        onTransformEnd={onTransformEnd}
+                        onDragEnd={onTransformEnd}
+                      />
+                    );
+                  default:
+                    return null;
+                }
+              })}
 
               {/* Remote Cursors */}
               {Object.entries(remoteCursors).map(([id, cursor]) => (
@@ -853,6 +1163,29 @@ export const Paint: React.FC = React.memo(function Paint() {
           onChange={onImportImageSelect}
           className="hidden"
           accept="image/*"
+        />
+        <textarea
+          ref={textAreaRef}
+          style={{
+            display: textEditingId ? 'block' : 'none',
+            position: 'fixed',
+            zIndex: 9999,
+            margin: 0,
+            padding: '8px',
+            background: 'transparent',
+            resize: 'none',
+            outline: 'none',
+            overflow: 'auto',
+            minHeight: '30px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          }}
+          onBlur={handleTextBlur}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              textAreaRef.current?.blur();
+            }
+            // Allow Enter for new lines, Shift+Enter also works
+          }}
         />
       </div>
     </div>

@@ -51,7 +51,24 @@ import {
 
 const ENDPOINT = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
-const SidebarItem = ({ icon: Icon, label, active = false, onClick }: { icon: any, label: string, active?: boolean, onClick?: () => void }) => {
+type SidebarItemProps =  {
+    icon:any,
+    label:string,
+    active?:boolean,
+    onClick?:()=> void
+}
+
+type BoardCardProps = {
+    title:string,
+    lastEdited?:string,
+    owner?:string,
+    image?:string,
+    roomId?:string,
+    onNewBoardClick?:()=>void,
+    isNew?:boolean
+}
+
+const SidebarItem = ({ icon: Icon, label, active = false, onClick }:SidebarItemProps) => {
     const activeBg = useColorModeValue('blue.50', 'blue.900');
     const activeColor = useColorModeValue('blue.600', 'blue.300');
     const inactiveColor = useColorModeValue('gray.600', 'gray.400');
@@ -74,15 +91,7 @@ const SidebarItem = ({ icon: Icon, label, active = false, onClick }: { icon: any
     );
 };
 
-const BoardCard = ({ title, lastEdited, owner, image, roomId, onNewBoardClick, isNew = false }: {
-    title: string,
-    lastEdited?: string,
-    owner?: string,
-    image?: string,
-    roomId?: string,
-    onNewBoardClick?: () => void,
-    isNew?: boolean
-}) => {
+const BoardCard = ({ title, lastEdited, owner, image, roomId, onNewBoardClick, isNew = false }: BoardCardProps) => {
     const navigate = useNavigate();
     const borderColor = useColorModeValue('gray.100', 'whiteAlpha.100');
     const cardBg = useColorModeValue('white', 'whiteAlpha.50');
