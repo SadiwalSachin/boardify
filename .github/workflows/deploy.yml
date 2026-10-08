@@ -1,0 +1,48 @@
+name: Deploy Boardify
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+
+          script: |
+            set -e
+
+            echo "🚀 Starting Boardify deployment..."
+
+            cd ~/boardify
+
+            echo "📥 Pulling latest code..."
+            git pull origin main
+
+            echo "🔧 Installing backend dependencies..."
+            cd Backend
+            npm ci
+
+            echo "🔄 Restarting backend..."
+            pm2 restart boardify-backend --update-env
+
+            echo "🎨 Building frontend..."
+            cd ../Frontend
+            npm ci
+            npm run build
+
+            echo "📦 Deploying frontend..."
+            sudo rsync -a --delete dist/ /var/www/html/
+
+            echo "✅ Deployment completed successfully!"
+
+            echo "📊 PM2 status:"
+            pm2 status
