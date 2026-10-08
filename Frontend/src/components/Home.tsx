@@ -22,8 +22,7 @@ import {
 } from "@chakra-ui/react";
 import { LuSparkles, LuChevronRight } from "react-icons/lu";
 
-// Use the generated image path (Antigravity will handle the path transformation)
-import futuristicHero from "../assets/hero.png"; // Keeping import name for simplicity, will update if needed
+import futuristicHero from "../assets/hero.png";
 import logo from "../assets/logo.png";
 
 

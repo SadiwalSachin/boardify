@@ -331,12 +331,9 @@ const Dashboard: React.FC = () => {
 
                 <nav className="flex-1 flex flex-col gap-1">
                     <SidebarItem icon={LuLayout} label="My Boards" active />
-                    <SidebarItem icon={LuUsers} label="Shared with Me" />
-                    <SidebarItem icon={LuClock} label="Recent" />
                 </nav>
 
                 <div className={`mt-auto pt-4 border-t ${borderColor} flex flex-col gap-1`}>
-                    <SidebarItem icon={LuSettings} label="Settings" />
                     <SidebarItem
                         icon={LuLogOut}
                         label="Logout"
@@ -521,21 +518,6 @@ const Dashboard: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                            <div className="relative flex-1 group">
-                                <LuSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-500 transition-colors" size={18} />
-                                <input
-                                    type="text"
-                                    placeholder="Search boards..."
-                                    className={`w-full pl-10 pr-4 py-2 ${useColorModeValue('bg-white', 'whiteAlpha.50')} border ${useColorModeValue('border-gray-200', 'whiteAlpha.200')} rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all shadow-sm ${useColorModeValue('text-gray-900', 'white')}`}
-                                />
-                            </div>
-
-                            <button className={`flex items-center justify-between gap-2 px-4 py-2 border ${useColorModeValue('border-gray-200', 'whiteAlpha.200')} rounded-lg text-sm font-medium ${useColorModeValue('text-gray-700', 'whiteAlpha.700')} ${useColorModeValue('bg-white', 'whiteAlpha.50')} hover:bg-opacity-80 transition-colors shadow-sm whitespace-nowrap`}>
-                                <span className="text-xs md:text-sm">Sort: Last Edited</span>
-                                <LuChevronDown size={14} className="text-gray-400" />
-                            </button>
-                        </div>
                     </header>
 
                     {/* Boards Grid */}
