@@ -1,11 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
     LuLayout,
-    LuUsers,
-    LuClock,
-    LuSettings,
-    LuSearch,
-    LuChevronDown,
     LuPlus,
     LuLayoutDashboard,
     LuMenu,
